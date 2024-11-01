@@ -59,6 +59,9 @@ typedef struct process_control_block {
                              @c WaitChild() */
 
   FCB* FIDT[MAX_FILEID];  /**< @brief The fileid table of the process */
+  
+  rlnode ptcb_list;       /**< @brief Node to use in list of PTCBs */
+  int thread_count;       /**< @brief Number of threads in PCB */
 
 } PCB;
 
