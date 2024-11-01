@@ -35,6 +35,7 @@ static inline void initialize_PCB(PCB* pcb)
   pcb->pstate = FREE;
   pcb->argl = 0;
   pcb->args = NULL;
+  pcb->thread_count = 0;
 
   for(int i=0;i<MAX_FILEID;i++)
     pcb->FIDT[i] = NULL;
@@ -43,6 +44,8 @@ static inline void initialize_PCB(PCB* pcb)
   rlnode_init(& pcb->exited_list, NULL);
   rlnode_init(& pcb->children_node, pcb);
   rlnode_init(& pcb->exited_node, pcb);
+
+  rlnode_init(& pcb->ptcb_list, NULL);
   pcb->child_exit = COND_INIT;
 }
 
@@ -124,6 +127,20 @@ void start_main_thread()
   Exit(exitval);
 }
 
+/*
+  This function is provided as an argument to spawn_thread,
+  to execute the thread of a @c PTCB
+ */
+void start_thread() {
+  int exitval;
+
+  Task call = CURPTCB->task;
+  int argl = CURPTCB->argl;
+  void* args = CURPTCB->args;
+
+  exitval = call(argl, args);
+  sys_ThreadExit(exitval);
+}
 
 /*
 	System call to create a new process.
@@ -178,7 +195,16 @@ Pid_t sys_Exec(Task call, int argl, void* args)
     the initialization of the PCB.
    */
   if(call != NULL) {
-    newproc->main_thread = spawn_thread(newproc, start_main_thread);
+    TCB* tcb = spawn_thread(newproc, start_main_thread);
+    PTCB* ptcb = init_ptcb(call, argl, args);
+
+    tcb->ptcb = ptcb;
+    ptcb->tcb = tcb;
+
+    rlist_push_back(&newproc->ptcb_list, &ptcb->ptcb_list_node);
+    newproc->thread_count = 1;
+    
+    newproc->main_thread = tcb;
     wakeup(newproc->main_thread);
   }
 

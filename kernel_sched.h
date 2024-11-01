@@ -26,6 +26,45 @@
 
 /*****************************
  *
+ *  The Process Thread Control Block
+ *
+ *****************************/
+
+/** @brief The Process Thread Control Block
+ * 
+ *  Serves as a medium between a @c PCB and a @c TCB.
+ */
+typedef struct process_thread_control_block {
+  TCB* tcb; /**< @brief The thread connected to the PTCB */
+
+  Task task; /**< @brief The task appointed to the PTCB */
+  int argl; /**< @brief The PTCB's argument length */
+  void* args; /**< @brief The PTCB's argument string */
+
+  int exitval; /**< @brief The return value of the @c thread_func of the connected @c TCB */
+
+  int exited; /**< @brief Whether the @c tcb has exited */
+  int detached; /**< @brief Whether the @c tcb is detached */
+  CondVar exit_cv; /**< @brief The condition variables */
+
+  int refcount;
+
+  rlnode ptcb_list_node; /**< @brief Node to use in list of PTCBs of PCB */
+} PTCB;
+
+/** @brief Create a new PTCB
+ * 
+ * This call creates a new process-thread control block, initializing it
+ * and returning a pointer to the PTCB.
+ * 
+ * @param task The task of the process
+ * @param argl The PTCB'S arguments length
+ * @param args The PTCB'S arguments string
+ */
+PTCB* init_ptcb(Task task, int argl, void* args);
+
+/*****************************
+ *
  *  The Thread Control Block
  *
  *****************************/
@@ -100,6 +139,8 @@ enum SCHED_CAUSE {
 typedef struct thread_control_block {
 
 	PCB* owner_pcb; /**< @brief This is null for a free TCB */
+
+  PTCB* ptcb; /**< @brief The @c PTCB the thread is connected to */
 
 	cpu_context_t context; /**< @brief The thread context */
 	Thread_type type; /**< @brief The type of thread */
@@ -179,6 +220,14 @@ TCB* cur_thread();
   i.e., the thread currently executing on this core.
 */
 #define CURPROC (cur_thread()->owner_pcb)
+
+/**
+ * @brief The current PTCB.
+ * 
+ * This is a pointer to the PTCB of the current thread,
+ * i.e., the thread currently executing on this core.
+ */
+#define CURPTCB (cur_thread()->ptcb)
 
 /**
   @brief A timeout constant, denoting no timeout for sleep.

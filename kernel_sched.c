@@ -147,6 +147,30 @@ static void thread_start()
 }
 
 /*
+  Initialize and return a new PTCB
+*/
+PTCB* init_ptcb(Task task, int argl, void* args) {
+	/* Allocate size for PTCB*/
+	PTCB* ptcb = (PTCB*)xmalloc(sizeof(PTCB));
+
+	ptcb->tcb = NULL;
+
+	ptcb->task = task;
+	ptcb->argl = argl;
+	ptcb->args = args;
+
+	ptcb->exitval = 0;
+	ptcb->exited = 0;
+	ptcb->detached = 0;
+	ptcb->exit_cv = COND_INIT;
+
+	ptcb->refcount = 0;
+	rlnode_init(&ptcb->ptcb_list_node, ptcb);
+
+	return ptcb;
+}
+
+/*
   Initialize and return a new TCB
 */
 
@@ -157,6 +181,8 @@ TCB* spawn_thread(PCB* pcb, void (*func)())
 
 	/* Set the owner */
 	tcb->owner_pcb = pcb;
+
+	tcb->ptcb = NULL;
 
 	/* Initialize the other attributes */
 	tcb->type = NORMAL_THREAD;
