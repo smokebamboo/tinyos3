@@ -56,6 +56,7 @@ int sys_ThreadJoin(Tid_t tid, int* exitval)
   }
   joinedptcb->refcount--;
 
+  /*We can't go on if the thread is not exited*/
   if (joinedptcb->detached == 1){
     return -1;
   }
@@ -148,6 +149,11 @@ void clean_process() {
       FCB_decref(curproc->FIDT[i]);
       curproc->FIDT[i] = NULL;
     }
+  }
+
+  while(!is_rlist_empty(&curproc->ptcb_list)) {
+    PTCB* temp_ptcb = rlist_pop_front(&curproc->ptcb_list)->ptcb;
+    if (temp_ptcb) free(temp_ptcb);
   }
 
   /* Disconnect my main_thread */

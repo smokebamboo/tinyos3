@@ -47,9 +47,10 @@ typedef struct process_thread_control_block {
   int detached; /**< @brief Whether the @c tcb is detached */
   CondVar exit_cv; /**< @brief The condition variables */
 
-  int refcount;
+  int refcount; /**< @brief The amount of threads waiting on this */
 
   rlnode ptcb_list_node; /**< @brief Node to use in list of PTCBs of PCB */
+
 } PTCB;
 
 /** @brief Create a new PTCB
@@ -157,6 +158,9 @@ typedef struct thread_control_block {
 
 	enum SCHED_CAUSE curr_cause; /**< @brief The endcause for the current time-slice */
 	enum SCHED_CAUSE last_cause; /**< @brief The endcause for the last time-slice */
+
+  int priority; /**< @brief The priority of the TCB to schedule */
+
 
 #ifndef NVALGRIND
 	unsigned valgrind_stack_id; /**< @brief Valgrind helper for stacks. 
@@ -327,6 +331,33 @@ void initialize_scheduler(void);
   */
 #define QUANTUM (10000L)
 
+/**
+ * @brief Priority levels
+ * 
+ * This is the amount of priority levels threads can have.
+ */
+#define MAX_PRIORITY_LEVEL (3)
+
+/**
+ * @brief Initialize priority
+ * 
+ * The priority level of a TCB that has never been scheduled
+ */
+#define PRIO_INIT (-1)
+
+/**
+ * @brief Initial priority
+ * 
+ * The priority level a TCB will get when it first gets scheduled
+ */
+#define DEFAULT_PRIORITY (MAX_PRIORITY_LEVEL / 2)
+
+/**
+ * @brief Number of yields to raise priority
+ * 
+ * After this many amounts of calls of the yield() function the thread priorities will be raised by 1
+ */
+#define YIELDS_TO_RAISE (50)
 /** @} */
 
 #endif
