@@ -65,6 +65,13 @@ typedef struct process_control_block {
 
 } PCB;
 
+/**
+ * @brief Begin executing thread task
+ * 
+ *  This function is provided as an argument to spawn_thread,
+ *  to execute the thread of a @c PTCB
+ */
+void start_thread();
 
 /**
   @brief Initialize the process table.
