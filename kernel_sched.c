@@ -486,7 +486,9 @@ void yield(enum SCHED_CAUSE cause)
 			if (current->priority != MAX_PRIORITY_LEVEL) current->priority++;
 			break;
 		case SCHED_MUTEX:
-			if ((current->last_cause) && (current->last_cause == SCHED_MUTEX)) current->priority--;
+			if ((current->last_cause) && (current->last_cause == SCHED_MUTEX)){
+				if(current->priority != 0) current->priority--;
+			}
 			break;
 		default:
 			break;
