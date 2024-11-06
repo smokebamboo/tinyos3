@@ -296,7 +296,8 @@ static void sched_register_timeout(TCB* tcb, TimerDuration timeout)
 static void sched_queue_add(TCB* tcb)
 {
 	/* Insert at the end of the scheduling list */
-	rlist_push_back(&SCHED[tcb->priority], &tcb->sched_node);
+	if (tcb)
+		rlist_push_back(&SCHED[tcb->priority], &tcb->sched_node);
 
 	/* Restart possibly halted cores */
 	cpu_core_restart_one();
@@ -384,8 +385,10 @@ void raise_priorities() {
 	for (int i = MAX_PRIORITY_LEVEL; i > 0; i--) {
 		while(!is_rlist_empty(&SCHED[i-1])) {
 			TCB* tcb = rlist_pop_front(&SCHED[i-1])->tcb;
-			tcb->priority++;
-			sched_queue_add(tcb);
+			if (tcb) {
+				tcb->priority++;
+				rlist_push_back(&SCHED[tcb->priority], &tcb->sched_node);
+			}
 		}
 	}
 	yields_counter = 0;
@@ -457,8 +460,6 @@ void sleep_releasing(Thread_state state, Mutex* mx, enum SCHED_CAUSE cause,
 
 void yield(enum SCHED_CAUSE cause)
 {	
-	/* If we called yield enough times, raise thread priorities */
-	(yields_counter == YIELDS_TO_RAISE) ? raise_priorities() : yields_counter++;
 
 	/* Reset the timer, so that we are not interrupted by ALARM */
 	TimerDuration remaining = bios_cancel_timer();
@@ -470,6 +471,9 @@ void yield(enum SCHED_CAUSE cause)
 
 	Mutex_Lock(&sched_spinlock);
 
+	/* If we called yield enough times, raise thread priorities */
+	(yields_counter == YIELDS_TO_RAISE) ? raise_priorities() : yields_counter++;
+	
 	/* Update CURTHREAD state */
 	if (current->state == RUNNING)
 		current->state = READY;
