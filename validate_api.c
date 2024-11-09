@@ -1094,7 +1094,6 @@ BOOT_TEST(test_detach_other,
 	"Test that a thread can detach another thread.")
 {
 
-
 	ASSERT(run_get_status(myproc, 0, NULL) == 42);
 
 	return 0;

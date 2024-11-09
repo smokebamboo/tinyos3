@@ -241,13 +241,11 @@ static void cleanup_zombie(PCB* pcb, int* status)
 
 static Pid_t wait_for_specific_child(Pid_t cpid, int* status)
 {
-
   /* Legality checks */
   if((cpid<0) || (cpid>=MAX_PROC)) {
     cpid = NOPROC;
     goto finish;
   }
-
   PCB* parent = CURPROC;
   PCB* child = get_pcb(cpid);
   if( child == NULL || child->parent != parent)
@@ -255,13 +253,11 @@ static Pid_t wait_for_specific_child(Pid_t cpid, int* status)
     cpid = NOPROC;
     goto finish;
   }
-
   /* Ok, child is a legal child of mine. Wait for it to exit. */
   while(child->pstate == ALIVE)
     kernel_wait(& parent->child_exit, SCHED_USER);
   
   cleanup_zombie(child, status);
-  
 finish:
   return cpid;
 }

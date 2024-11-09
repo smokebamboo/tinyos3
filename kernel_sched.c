@@ -460,7 +460,6 @@ void sleep_releasing(Thread_state state, Mutex* mx, enum SCHED_CAUSE cause,
 
 void yield(enum SCHED_CAUSE cause)
 {	
-
 	/* Reset the timer, so that we are not interrupted by ALARM */
 	TimerDuration remaining = bios_cancel_timer();
 
@@ -468,12 +467,10 @@ void yield(enum SCHED_CAUSE cause)
 	int preempt = preempt_off;
 
 	TCB* current = CURTHREAD; /* Make a local copy of current process, for speed */
-
 	Mutex_Lock(&sched_spinlock);
 
 	/* If we called yield enough times, raise thread priorities */
 	(yields_counter == YIELDS_TO_RAISE) ? raise_priorities() : yields_counter++;
-	
 	/* Update CURTHREAD state */
 	if (current->state == RUNNING)
 		current->state = READY;
@@ -499,14 +496,12 @@ void yield(enum SCHED_CAUSE cause)
 	}
 	/* Wake up threads whose sleep timeout has expired */
 	sched_wakeup_expired_timeouts();
-
 	/* Get next */
 	TCB* next = sched_queue_select(current);
 	assert(next != NULL);
 
 	/* Save the current TCB for the gain phase */
 	CURCORE.previous_thread = current;
-
 	Mutex_Unlock(&sched_spinlock);
 
 	/* Switch contexts */
@@ -514,7 +509,6 @@ void yield(enum SCHED_CAUSE cause)
 		CURTHREAD = next;
 		cpu_swap_context(&current->context, &next->context);
 	}
-
 	/* This is where we get after we are switched back on! A long time
 	   may have passed. Start a new timeslice...
 	  */
@@ -534,7 +528,7 @@ void yield(enum SCHED_CAUSE cause)
 */
 
 void gain(int preempt)
-{
+{	
 	Mutex_Lock(&sched_spinlock);
 
 	TCB* current = CURTHREAD;

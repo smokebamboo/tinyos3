@@ -256,14 +256,13 @@ int kernel_wait_wchan(CondVar* cv, enum SCHED_CAUSE cause,
 	Mutex_Lock(& kernel_mutex);
 	kernel_sem++;
 	Cond_Signal(&kernel_sem_cv);	
-
 	int ret = cv_wait(&kernel_mutex, cv, cause, timeout);
 
 	/* Reacquire kernel semaphore */
 	while(kernel_sem<=0)
 		Cond_Wait(& kernel_mutex, &kernel_sem_cv);
 	kernel_sem--;
-	Mutex_Unlock(& kernel_mutex);		
+	Mutex_Unlock(& kernel_mutex);	
 
 	return ret;
 }
