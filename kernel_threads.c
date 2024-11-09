@@ -58,7 +58,6 @@ int sys_ThreadJoin(Tid_t tid, int* exitval)
 
   /*We can't go on if the thread is not exited*/
   if (joinedptcb->detached == 1){
-    // kernel_broadcast(&joinedptcb->exit_cv);
     return -1;
   }
   /*return the exit value*/
@@ -66,7 +65,6 @@ int sys_ThreadJoin(Tid_t tid, int* exitval)
   
   if(joinedptcb->refcount == 0) {
     rlist_remove(&joinedptcb->ptcb_list_node);
-    // kernel_broadcast(&joinedptcb->exit_cv);
     free(joinedptcb);
   }
   return 0;
@@ -110,6 +108,12 @@ void kill_curr_thread(int exitval) {
 void clean_process() {
   PCB* curproc = CURPROC;
 
+  /*Clear the PTCB list*/
+  while(!is_rlist_empty(&curproc->ptcb_list)) {
+    PTCB* temp_ptcb = rlist_pop_front(&curproc->ptcb_list)->ptcb;
+    if (temp_ptcb) free(temp_ptcb);
+  }
+
   if (get_pid(curproc) != 1) {
     /* Reparent any children of the exiting process to the 
        initial task */
@@ -151,11 +155,6 @@ void clean_process() {
       FCB_decref(curproc->FIDT[i]);
       curproc->FIDT[i] = NULL;
     }
-  }
-
-  while(!is_rlist_empty(&curproc->ptcb_list)) {
-    PTCB* temp_ptcb = rlist_pop_front(&curproc->ptcb_list)->ptcb;
-    if (temp_ptcb) free(temp_ptcb);
   }
 
   /* Disconnect my main_thread */
