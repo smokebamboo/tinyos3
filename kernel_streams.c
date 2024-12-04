@@ -134,7 +134,7 @@ int sys_Read(Fid_t fd, char *buf, unsigned int size)
   int (*devread)(void*,char*,uint);
   void* sobj;
 
-  
+
   /* Get the fields from the stream */
   FCB* fcb = get_fcb(fd);
 

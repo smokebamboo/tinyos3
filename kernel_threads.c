@@ -61,7 +61,7 @@ int sys_ThreadJoin(Tid_t tid, int* exitval)
     return -1;
   }
   /*return the exit value*/
-  if (joinedptcb->exitval && exitval) (*exitval = joinedptcb->exitval);
+  if (exitval) (*exitval = joinedptcb->exitval);
   
   if(joinedptcb->refcount == 0) {
     rlist_remove(&joinedptcb->ptcb_list_node);
@@ -81,12 +81,13 @@ int sys_ThreadDetach(Tid_t tid)
 
   PTCB* ptcb = node->ptcb;
   if (ptcb->exited == 1) return -1;
-  /*clear its waitset*/
-  kernel_broadcast(&ptcb->exit_cv);
-  ptcb->refcount = 0;
-
+  
   /*detach the thread*/
   ptcb->detached = 1;
+
+  /*clear its waitset*/
+  kernel_broadcast(&ptcb->exit_cv);
+
   return 0;
 }
 
@@ -96,7 +97,7 @@ int sys_ThreadDetach(Tid_t tid)
 void kill_curr_thread(int exitval) {
   /*Steal his exitval and kill it (batman lore ptcb)*/
   PTCB* curptcb = CURPTCB;
-  if (exitval) (curptcb->exitval = exitval);
+  curptcb->exitval = exitval;
 
   curptcb->exited = 1;
 
