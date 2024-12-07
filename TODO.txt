@@ -2,3 +2,5 @@
 2. Create init_ptcb [DONE]
 3. Write the description in start_thread [NOT_DONE]
 4. Check the priority level when initializing a TCB for the first time (if it needs to be -1 or of it need to be directly the default initial level) [NOT_DONE]
+5. Check if broadcast is needed in pipe_reader_close since nothing will be read either way
+6. Use WrongOperation in reader/writer_file_ops
