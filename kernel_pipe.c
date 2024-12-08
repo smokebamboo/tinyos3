@@ -81,7 +81,6 @@ int pipe_reader_close(void* pipecb) {
 	return 0;
 }
 
-
 static file_ops reader_file_ops = {
 	.Read = pipe_read,
 	.Close = pipe_reader_close
