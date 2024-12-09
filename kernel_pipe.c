@@ -4,20 +4,34 @@
 #include "kernel_sched.h"
 #include "kernel_cc.h"
 
+/*Checks if the pipe is able to write*/
 int can_write(PIPE_CB* pipe) {
-	/** checks if the writer has come full circle behind the reader and can't read anymore
-		without corrupting unread data
-	*/
+	/** if writer has come full circle behind the reader ->
+	 *  can't read anymore without corrupting unread data
+	 */
 	if (pipe->r_position == (pipe->w_position + 1) % PIPE_BUFFER_SIZE) return 0;
 	return 1;
 }
 
+/*Checks if the pipe is able to read*/
 int can_read(PIPE_CB* pipe) {
-	/** checks if the reader is in the same position as the writer
-	 * which means there is no data to read
+	/** if reader is in same position as writer
+	 *  means there is no data to read
 	 */
 	if (pipe->r_position == pipe->w_position) return 0;
 	return 1;
+}
+
+void* false_open_pipe (uint minor) {
+	return NULL;
+}
+
+int false_read (void* pipecb, char *buf, unsigned int n) {
+	return -1;
+}
+
+int false_write (void* pipecb, const char *buf, unsigned int n) {
+	return -1;
 }
 
 int pipe_write(void* pipecb, const char *buf, unsigned int n) {
@@ -26,17 +40,21 @@ int pipe_write(void* pipecb, const char *buf, unsigned int n) {
 	PIPE_CB* pipe = (PIPE_CB*) pipecb;
 	if (pipe->reader == NULL || pipe->writer == NULL) return -1;
 
+	//Wait for space to write
 	while (!can_write(pipe) && pipe->reader != NULL) {
+		//Broadcast we are full
 		kernel_broadcast(&pipe->has_data);
 		kernel_wait(&pipe->has_space, SCHED_PIPE);
 	}
 
+	//copy data to BUFFER
 	int chars_written;
 	for (chars_written = 0; chars_written < n && can_write(pipe); chars_written++) {
 		pipe->BUFFER[pipe->w_position] = buf[chars_written];
 		pipe->w_position = (pipe->w_position + 1) % PIPE_BUFFER_SIZE;
 	}
 	
+	//GET MY DATA
 	kernel_broadcast(&pipe->has_data);
 	return chars_written;
 }
@@ -44,19 +62,24 @@ int pipe_write(void* pipecb, const char *buf, unsigned int n) {
 int pipe_read(void* pipecb, char *buf, unsigned int n) {
 	if (!pipecb) return -1;
 	PIPE_CB* pipe = (PIPE_CB*) pipecb;
+	//We don't really need the writer to read
 	if (pipe->reader == NULL) return -1;
 
+	//Wait for data to read
 	while (!can_read(pipe) && pipe->writer != NULL) {
+		//Broadcast we are empty
 		kernel_broadcast(&pipe->has_space);
 		kernel_wait(&pipe->has_data, SCHED_PIPE);
 	}
 
+	//Get data from buf
 	int chars_read;
 	for (chars_read = 0; chars_read < n && can_read(pipe); chars_read++) {
 		buf[chars_read] = pipe->BUFFER[pipe->r_position];
 		pipe->r_position = (pipe->r_position + 1) % PIPE_BUFFER_SIZE;
 	}
 
+	//GIVE ME MORE DATA
 	kernel_broadcast(&pipe->has_space);
 	return chars_read;
 }
@@ -67,6 +90,8 @@ int pipe_writer_close(void* pipecb) {
 	if (!pipe) return -1;
 
 	pipe->writer = NULL;
+	//If reader is also closed, we dont need the pipe
+	//Else we need the current data to leave the pipe
 	(pipe->reader == NULL) ? free(pipe) : kernel_broadcast(&pipe->has_data);
 	return 0;
 }
@@ -77,20 +102,29 @@ int pipe_reader_close(void* pipecb) {
 	if (!pipe) return -1;
 
 	pipe->reader = NULL;
+	//If writer is also closed, we dont need the pipe
+	//Else we can still write
 	(pipe->writer == NULL) ? free(pipe) : kernel_broadcast(&pipe->has_space);
 	return 0;
 }
 
+/*The calls a reader can make*/
 static file_ops reader_file_ops = {
+	.Open = false_open_pipe,
 	.Read = pipe_read,
+	.Write = false_write,
 	.Close = pipe_reader_close
 };
 
+/*The calls a writer can make*/
 static file_ops writer_file_ops = {
+	.Open = false_open_pipe,
+	.Read = false_read,
 	.Write = pipe_write,
 	.Close = pipe_writer_close
 };
 
+/*Initialize and return a new pipe_cb*/
 PIPE_CB* init_pipe_cb() {
 	PIPE_CB* pipe_cb = (PIPE_CB*) xmalloc(sizeof(PIPE_CB));
 	pipe_cb->reader = NULL;

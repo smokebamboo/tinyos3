@@ -106,8 +106,11 @@ PCB* get_pcb(Pid_t pid);
 Pid_t get_pid(PCB* pcb);
 
 
-
-
+/**
+ * @brief Process Info Control Block
+ * 
+ * This structure holds the info of the process it points to with @c pcbcursor
+ */
 
 typedef struct procinfo_control_block {
   procinfo info;

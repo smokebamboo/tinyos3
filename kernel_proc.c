@@ -325,10 +325,14 @@ void sys_Exit(int exitval)
   sys_ThreadExit(exitval);
 }
 
+/** 
+ * The function accesses the next non-FREE process, gets its info and copies it onto @c buf
+ */
 int procinfo_read(void* __procinfo_cb, char* buf, unsigned int n) {
   procinfo_cb* procinfo = (procinfo_cb*) __procinfo_cb;
   if(!procinfo || procinfo->pcbcursor == MAX_PROC) return 0;
 
+  /*Find the next non-Free process*/
   PCB* pcb = &PT[procinfo->pcbcursor];
   while(pcb->pstate == FREE) {
     procinfo->pcbcursor++;
@@ -340,9 +344,11 @@ int procinfo_read(void* __procinfo_cb, char* buf, unsigned int n) {
   if(pcb->pstate == ALIVE) {
     procinfo->info.alive = 1;
   } else {
+    //We also need the zombies, but they are dead
     procinfo->info.alive = 0;
   }
 
+  /*Get the data from the process*/
   procinfo->info.pid = get_pid(pcb);
   procinfo->info.ppid = get_pid(pcb->parent);
 
@@ -351,27 +357,31 @@ int procinfo_read(void* __procinfo_cb, char* buf, unsigned int n) {
   
   procinfo->info.argl = pcb->argl;
 
+  //Copy the args data char to char
   for (int i = 0; i < procinfo->info.argl && i < PROCINFO_MAX_ARGS_SIZE; i++) {
     procinfo->info.args[i] = ((char*) pcb->args)[i];
   }
 
   procinfo->pcbcursor++;
 
+  /*Copy the data from info to buf*/
   memcpy(buf, (char*) &procinfo->info, sizeof(procinfo->info));
   return sizeof(procinfo->info);
 }
 
+/*Terminate the procinfo_cb*/
 int procinfo_close(void* __procinfo_cb) {
   free((procinfo_cb*) __procinfo_cb);
   return 0;
 }
 
-
+/*The calls a procinfo_cb can make*/
 static file_ops procinfo_ops = {
   .Read = procinfo_read,
   .Close = procinfo_close
 };
 
+/*Initialize a procinfo_cb*/
 procinfo_cb* init_procinfo_cb() {
   procinfo_cb* procinfo = xmalloc(sizeof(procinfo_cb));
 
@@ -380,17 +390,18 @@ procinfo_cb* init_procinfo_cb() {
   return procinfo;
 }
 
+/*Binds a new procinfo_cb with a FCB and returns its fid*/
 Fid_t sys_OpenInfo()
 {
-  FCB* fcb[1];
-  Fid_t fid[1];
-  if (!FCB_reserve(1, fid, fcb)) return NOFILE;
+  FCB* fcb;
+  Fid_t fid;
+  if (!FCB_reserve(1, &fid, &fcb)) return NOFILE;
 
   procinfo_cb* procinfo = init_procinfo_cb();
 
-  fcb[0]->streamfunc = &procinfo_ops;
-  fcb[0]->streamobj = procinfo;
+  fcb->streamfunc = &procinfo_ops;
+  fcb->streamobj = procinfo;
 
-	return fid[0];
+	return fid;
 }
 

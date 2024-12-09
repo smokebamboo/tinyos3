@@ -4,24 +4,23 @@
 #include "kernel_sched.h"
 #include "kernel_proc.h"
 #include "kernel_cc.h"
-#include "unit_testing.h"
 
+/*The PORT_MAP contains the SCBs that listen to the port that is equal to the index of the SCB in the array. */
 SCB* PORT_MAP[MAX_PORT + 1] = {NULL};
 
+/*Checks if the given fid is legal*/
 int fid_legal(Fid_t fid) {
 	if (fid >= MAX_FILEID || fid <= NOFILE) return 0;
 	return 1;
 }
 
+/*Checks if the given port is legal to connect to*/
 int port_legal(port_t port) {
 	if (port > MAX_PORT || port <= NOPORT) return 0;
 	return 1;
 }
 
-// SCB* get_scb (Fid_t fid) {
-// 	return (fid_legal(fid)) ? CURPROC->FIDT[fid]->streamobj : NULL;
-// }
-
+/*Finds the scb that corresponds to the given fid. */
 SCB* get_scb (Fid_t fid) {
 	FCB* fcb = get_fcb(fid);
 	if (!fcb) return NULL;
@@ -30,6 +29,7 @@ SCB* get_scb (Fid_t fid) {
 	return scb;
 }
 
+/* Initializes a new SCB and returns it. The initial type of the socket will be unbound. */
 SCB* init_scb() {
 	SCB* scb = xmalloc(sizeof(SCB));
 
@@ -46,23 +46,26 @@ SCB* init_scb() {
 Fid_t sys_Socket(port_t port) {
 	if (port < NOPORT || port > MAX_PORT) return -1;
 
-	FCB* fcb[1];
-	Fid_t fid[1];
-	if(!FCB_reserve(1, fid, fcb)) return -1; //MAY NEED TO BE INITIALIZED AS AN ARRAY
+	FCB* fcb;
+	Fid_t fid;
+	if(!FCB_reserve(1, &fid, &fcb)) return -1;
 	SCB* scb = init_scb();
 
-	scb->fcb = fcb[0];
+	scb->fcb = fcb;
 
-	fcb[0]->streamobj = scb;
-	fcb[0]->streamfunc = &socket_file_ops;
+	fcb->streamobj = scb;
+	fcb->streamfunc = &socket_file_ops;
 
 	if (port != NOPORT) scb->port = port;
 
-	return fid[0];
+	return fid;
+}
+
+void* false_open_sock (uint minor) {
+	return NULL;
 }
 
 int socket_read(void* __scb, char *buf, unsigned int size) {
-	// SCB* scb = get_scb((Fid_t) fid);
 	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
 	return pipe_read(scb->peer_s.read_pipe, buf, size);
@@ -76,7 +79,6 @@ int socket_write(void* __scb, const char* buf, unsigned int size) {
 }
 
 int socket_close(void* __scb) {
-	// SCB* scb = get_scb((Fid_t) fid);
 	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
 	
@@ -109,10 +111,11 @@ int sys_Listen(Fid_t sock) {
 	SCB* scb = get_scb(sock);
 	if (!scb
 		|| scb->port == NOPORT
-		|| scb->type != SOCKET_UNBOUND
-		|| PORT_MAP[scb->port] != NULL)
+		|| scb->type != SOCKET_UNBOUND			//Socket has to be unbound to be able to become a listener
+		|| PORT_MAP[scb->port] != NULL)			//If the PORT_MAP position is not null, it means we already appointed a listener to the port
 			return -1;
 
+	//make scb a listening SCB
 	PORT_MAP[scb->port] = scb;
 	scb->type = SOCKET_LISTENER;
 	scb->listener_s.req_available = COND_INIT;
@@ -120,6 +123,7 @@ int sys_Listen(Fid_t sock) {
 	return 0;
 }
 
+/*Connect two peer sockets. */
 void connect_peers(SCB* peer, SCB* client) {
 	PIPE_CB* pipe1 = init_pipe_cb();
 	PIPE_CB* pipe2 = init_pipe_cb();
@@ -143,15 +147,19 @@ Fid_t sys_Accept(Fid_t lsock) {
 	if(!listener || listener->type != SOCKET_LISTENER) return NOFILE;
 
 	listener->refcount++;
-
-	if(is_rlist_empty(&listener->listener_s.queue)) {
+	
+	//wait until a request is available
+	while(is_rlist_empty(&listener->listener_s.queue)) {
 		kernel_wait(&listener->listener_s.req_available, SCHED_PIPE);
-	}
-	if (!PORT_MAP[listener->port]) {
-		listener->refcount--;
-		return NOFILE;
+
+		//oops, port is closed
+		if (!PORT_MAP[listener->port]) {
+			listener->refcount--;
+			return NOFILE;
+		}
 	}
 
+	//get request from queue
 	request* req = rlist_pop_front(&listener->listener_s.queue)->req;
 	if (!req) {
 	listener->refcount--;
@@ -159,6 +167,8 @@ Fid_t sys_Accept(Fid_t lsock) {
 	}
 
 	SCB* client = req->peer;
+
+	//initialize a new socket to connect with the client
 	Fid_t peer_fid = sys_Socket(NOPORT);
 	if (peer_fid == NOFILE) return -1;
 	SCB* peer = get_scb(peer_fid);
@@ -172,6 +182,7 @@ Fid_t sys_Accept(Fid_t lsock) {
 
 	connect_peers(peer, client);
 
+	//request was handled succesfully
 	req->admitted = 1;
 	kernel_signal(&req->request_honored);
 
@@ -179,27 +190,36 @@ Fid_t sys_Accept(Fid_t lsock) {
 	return peer_fid;
 }
 
+/*Initialize a new request and return it*/
 request* create_request(Fid_t sock) {
 	request* newreq = xmalloc(sizeof(request));
+
 	newreq->peer = get_scb(sock);
 	newreq->admitted = 0;
+
 	newreq->request_honored = COND_INIT;
 	rlnode_init(&newreq->request_node, newreq);
+
 	return newreq;
 }
 
 int sys_Connect(Fid_t sock, port_t port, timeout_t timeout) {
 	if (!fid_legal(sock) || !port_legal(port) || !PORT_MAP[port]) return -1;
+
 	SCB* listener = PORT_MAP[port];
+
 	SCB* client = get_scb(sock);
 	if (!client || !listener) return -1;
 
 	client->refcount++;
+
+	//create a connection request and send it to server
 	request* req = create_request(sock);
 	rlist_push_back(&PORT_MAP[port]->listener_s.queue, &req->request_node);
 	kernel_signal(&listener->listener_s.req_available);
 	
-	kernel_timedwait(&req->request_honored, SCHED_PIPE, 500);
+	//wait for the request to be accepted
+	kernel_timedwait(&req->request_honored, SCHED_PIPE, SERVER_TIMEOUT);
 	client->refcount--;
 
 	int retval = (req->admitted) ? 0 : -1;
