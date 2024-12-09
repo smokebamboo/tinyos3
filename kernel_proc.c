@@ -325,10 +325,72 @@ void sys_Exit(int exitval)
   sys_ThreadExit(exitval);
 }
 
+int procinfo_read(void* __procinfo_cb, char* buf, unsigned int n) {
+  procinfo_cb* procinfo = (procinfo_cb*) __procinfo_cb;
+  if(!procinfo || procinfo->pcbcursor == MAX_PROC) return 0;
 
+  PCB* pcb = &PT[procinfo->pcbcursor];
+  while(pcb->pstate == FREE) {
+    procinfo->pcbcursor++;
+    if (procinfo->pcbcursor == MAX_PROC) return 0;
+
+    pcb = &PT[procinfo->pcbcursor];
+  }
+
+  if(pcb->pstate == ALIVE) {
+    procinfo->info.alive = 1;
+  } else {
+    procinfo->info.alive = 0;
+  }
+
+  procinfo->info.pid = get_pid(pcb);
+  procinfo->info.ppid = get_pid(pcb->parent);
+
+  procinfo->info.thread_count = pcb->thread_count;
+  procinfo->info.main_task = pcb->main_task;
+  
+  procinfo->info.argl = pcb->argl;
+
+  for (int i = 0; i < procinfo->info.argl && i < PROCINFO_MAX_ARGS_SIZE; i++) {
+    procinfo->info.args[i] = ((char*) pcb->args)[i];
+  }
+
+  procinfo->pcbcursor++;
+
+  memcpy(buf, (char*) &procinfo->info, sizeof(procinfo->info));
+  return sizeof(procinfo->info);
+}
+
+int procinfo_close(void* __procinfo_cb) {
+  free((procinfo_cb*) __procinfo_cb);
+  return 0;
+}
+
+
+static file_ops procinfo_ops = {
+  .Read = procinfo_read,
+  .Close = procinfo_close
+};
+
+procinfo_cb* init_procinfo_cb() {
+  procinfo_cb* procinfo = xmalloc(sizeof(procinfo_cb));
+
+  procinfo->pcbcursor = 0;
+  
+  return procinfo;
+}
 
 Fid_t sys_OpenInfo()
 {
-	return NOFILE;
+  FCB* fcb[1];
+  Fid_t fid[1];
+  if (!FCB_reserve(1, fid, fcb)) return NOFILE;
+
+  procinfo_cb* procinfo = init_procinfo_cb();
+
+  fcb[0]->streamfunc = &procinfo_ops;
+  fcb[0]->streamobj = procinfo;
+
+	return fid[0];
 }
 

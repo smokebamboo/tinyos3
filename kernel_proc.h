@@ -105,6 +105,15 @@ PCB* get_pcb(Pid_t pid);
 */
 Pid_t get_pid(PCB* pcb);
 
+
+
+
+
+typedef struct procinfo_control_block {
+  procinfo info;
+  int pcbcursor;
+} procinfo_cb;
+
 /** @} */
 
 #endif

@@ -4,16 +4,30 @@
 #include "kernel_sched.h"
 #include "kernel_proc.h"
 #include "kernel_cc.h"
+#include "unit_testing.h"
 
 SCB* PORT_MAP[MAX_PORT + 1] = {NULL};
 
 int fid_legal(Fid_t fid) {
-	if (fid > MAX_FILEID || fid == NOFILE) return 0;
+	if (fid >= MAX_FILEID || fid <= NOFILE) return 0;
 	return 1;
 }
 
+int port_legal(port_t port) {
+	if (port > MAX_PORT || port <= NOPORT) return 0;
+	return 1;
+}
+
+// SCB* get_scb (Fid_t fid) {
+// 	return (fid_legal(fid)) ? CURPROC->FIDT[fid]->streamobj : NULL;
+// }
+
 SCB* get_scb (Fid_t fid) {
-	return (fid_legal(fid)) ? CURPROC->FIDT[fid]->streamobj : NULL;
+	FCB* fcb = get_fcb(fid);
+	if (!fcb) return NULL;
+	SCB* scb = fcb->streamobj;
+	if (!scb) return NULL;
+	return scb;
 }
 
 SCB* init_scb() {
@@ -35,7 +49,6 @@ Fid_t sys_Socket(port_t port) {
 	FCB* fcb[1];
 	Fid_t fid[1];
 	if(!FCB_reserve(1, fid, fcb)) return -1; //MAY NEED TO BE INITIALIZED AS AN ARRAY
-
 	SCB* scb = init_scb();
 
 	scb->fcb = fcb[0];
@@ -45,38 +58,59 @@ Fid_t sys_Socket(port_t port) {
 
 	if (port != NOPORT) scb->port = port;
 
-	return fid;
+	return fid[0];
 }
 
-int socket_read(void* fid, char *buf, unsigned int size) {
-	SCB* scb = get_scb((Fid_t) fid);
+int socket_read(void* __scb, char *buf, unsigned int size) {
+	// SCB* scb = get_scb((Fid_t) fid);
+	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
-	pipe_read(scb->peer_s.read_pipe, buf, size);
-	return 0;
+	return pipe_read(scb->peer_s.read_pipe, buf, size);
 }
 
-int socket_write(void* fid, const char* buf, unsigned int size) {
-	SCB* scb = get_scb((Fid_t) fid);
+int socket_write(void* __scb, const char* buf, unsigned int size) {
+	// SCB* scb = get_scb((Fid_t) fid);
+	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
-	pipe_write(scb->peer_s.write_pipe, buf, size);
-	return 0;
+	return pipe_write(scb->peer_s.write_pipe, buf, size);
 }
 
-int socket_close(void* fid) {
-	SCB* scb = get_scb((Fid_t) fid);
+int socket_close(void* __scb) {
+	// SCB* scb = get_scb((Fid_t) fid);
+	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
-	pipe_reader_close(scb->peer_s.read_pipe);
-	pipe_writer_close(scb->peer_s.write_pipe);
+	
+	switch(scb->type) {
+		case SOCKET_LISTENER:
+			PORT_MAP[scb->port] = NULL;
+
+			kernel_signal(&scb->listener_s.req_available);
+			while(!is_rlist_empty(&scb->listener_s.queue)) {
+				rlnode* node = rlist_pop_front(&scb->listener_s.queue);
+				kernel_signal(&node->req->request_honored);
+			}
+			break;
+		case SOCKET_UNBOUND:
+			break;
+		case SOCKET_PEER:
+			scb->peer_s.peer = NULL;
+			pipe_reader_close(scb->peer_s.read_pipe);
+			pipe_writer_close(scb->peer_s.write_pipe);
+	}
+	scb->port = NOPORT;
+	scb->fcb = NULL;
+	
+	if(scb->refcount == 0) free(scb);
+
 	return 0;
 }
 
 int sys_Listen(Fid_t sock) {
-	if (!fid_legal(sock)) return -1;
-	SCB* scb = CURPROC->FIDT[sock]->streamobj;
+	SCB* scb = get_scb(sock);
 	if (!scb
 		|| scb->port == NOPORT
-		|| scb->type == SOCKET_LISTENER
-		|| PORT_MAP[scb->port])
+		|| scb->type != SOCKET_UNBOUND
+		|| PORT_MAP[scb->port] != NULL)
 			return -1;
 
 	PORT_MAP[scb->port] = scb;
@@ -110,7 +144,7 @@ Fid_t sys_Accept(Fid_t lsock) {
 
 	listener->refcount++;
 
-	while(is_rlist_empty(&listener->listener_s.queue)) {
+	if(is_rlist_empty(&listener->listener_s.queue)) {
 		kernel_wait(&listener->listener_s.req_available, SCHED_PIPE);
 	}
 	if (!PORT_MAP[listener->port]) {
@@ -126,6 +160,7 @@ Fid_t sys_Accept(Fid_t lsock) {
 
 	SCB* client = req->peer;
 	Fid_t peer_fid = sys_Socket(NOPORT);
+	if (peer_fid == NOFILE) return -1;
 	SCB* peer = get_scb(peer_fid);
 
 	peer->type = SOCKET_PEER;
@@ -154,7 +189,7 @@ request* create_request(Fid_t sock) {
 }
 
 int sys_Connect(Fid_t sock, port_t port, timeout_t timeout) {
-	if (!fid_legal(sock) || port == NOPORT) return -1;
+	if (!fid_legal(sock) || !port_legal(port) || !PORT_MAP[port]) return -1;
 	SCB* listener = PORT_MAP[port];
 	SCB* client = get_scb(sock);
 	if (!client || !listener) return -1;
@@ -166,8 +201,12 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout) {
 	
 	kernel_timedwait(&req->request_honored, SCHED_PIPE, 500);
 	client->refcount--;
-	if (!req->admitted) return -1; //server timeout
-	return 0;
+
+	int retval = (req->admitted) ? 0 : -1;
+	rlist_remove(&req->request_node);
+	free(req);
+
+	return retval;
 }
 
 
