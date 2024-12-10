@@ -92,7 +92,12 @@ int pipe_writer_close(void* pipecb) {
 	pipe->writer = NULL;
 	//If reader is also closed, we dont need the pipe
 	//Else we need the current data to leave the pipe
-	(pipe->reader == NULL) ? free(pipe) : kernel_broadcast(&pipe->has_data);
+	if (pipe->reader == NULL) {
+		free(pipe);
+		// pipe = NULL;
+	} else {
+		kernel_broadcast(&pipe->has_space);
+	}
 	return 0;
 }
 
@@ -104,7 +109,12 @@ int pipe_reader_close(void* pipecb) {
 	pipe->reader = NULL;
 	//If writer is also closed, we dont need the pipe
 	//Else we can still write
-	(pipe->writer == NULL) ? free(pipe) : kernel_broadcast(&pipe->has_space);
+	if (pipe->writer == NULL) {
+		free(pipe);
+		// pipe = NULL;
+	} else {
+		kernel_broadcast(&pipe->has_space);
+	}
 	return 0;
 }
 

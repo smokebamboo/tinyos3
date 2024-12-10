@@ -72,7 +72,6 @@ int socket_read(void* __scb, char *buf, unsigned int size) {
 }
 
 int socket_write(void* __scb, const char* buf, unsigned int size) {
-	// SCB* scb = get_scb((Fid_t) fid);
 	SCB* scb = (SCB*) __scb;
 	if (!scb) return -1;
 	return pipe_write(scb->peer_s.write_pipe, buf, size);
@@ -86,11 +85,7 @@ int socket_close(void* __scb) {
 		case SOCKET_LISTENER:
 			PORT_MAP[scb->port] = NULL;
 
-			kernel_signal(&scb->listener_s.req_available);
-			while(!is_rlist_empty(&scb->listener_s.queue)) {
-				rlnode* node = rlist_pop_front(&scb->listener_s.queue);
-				kernel_signal(&node->req->request_honored);
-			}
+			kernel_broadcast(&scb->listener_s.req_available);
 			break;
 		case SOCKET_UNBOUND:
 			break;
@@ -98,11 +93,17 @@ int socket_close(void* __scb) {
 			scb->peer_s.peer = NULL;
 			pipe_reader_close(scb->peer_s.read_pipe);
 			pipe_writer_close(scb->peer_s.write_pipe);
+			scb->peer_s.read_pipe = NULL;
+			scb->peer_s.write_pipe = NULL;
 	}
 	scb->port = NOPORT;
 	scb->fcb = NULL;
+	scb->type = SOCKET_UNBOUND;
 	
-	if(scb->refcount == 0) free(scb);
+	if (scb->refcount == 0) {
+		free(scb);
+		scb = NULL;
+	}
 
 	return 0;
 }
@@ -145,32 +146,32 @@ void connect_peers(SCB* peer, SCB* client) {
 Fid_t sys_Accept(Fid_t lsock) {
 	SCB* listener = get_scb(lsock);
 	if(!listener || listener->type != SOCKET_LISTENER) return NOFILE;
-
+	port_t port = listener->port;
 	listener->refcount++;
 	
 	//wait until a request is available
-	while(is_rlist_empty(&listener->listener_s.queue)) {
+	while(PORT_MAP[port] && is_rlist_empty(&listener->listener_s.queue)) {
 		kernel_wait(&listener->listener_s.req_available, SCHED_PIPE);
+	}
 
-		//oops, port is closed
-		if (!PORT_MAP[listener->port]) {
-			listener->refcount--;
-			return NOFILE;
-		}
+	//oops, port is closed
+	if (!PORT_MAP[port]) {
+		listener->refcount--;
+		return NOFILE;
 	}
 
 	//get request from queue
 	request* req = rlist_pop_front(&listener->listener_s.queue)->req;
-	if (!req) {
 	listener->refcount--;
-	return NOFILE;	
-	}
+
+	if (!req) return NOFILE;
 
 	SCB* client = req->peer;
 
 	//initialize a new socket to connect with the client
 	Fid_t peer_fid = sys_Socket(NOPORT);
 	if (peer_fid == NOFILE) return -1;
+	
 	SCB* peer = get_scb(peer_fid);
 
 	peer->type = SOCKET_PEER;
@@ -186,7 +187,6 @@ Fid_t sys_Accept(Fid_t lsock) {
 	req->admitted = 1;
 	kernel_signal(&req->request_honored);
 
-	listener->refcount--;
 	return peer_fid;
 }
 
@@ -204,12 +204,12 @@ request* create_request(Fid_t sock) {
 }
 
 int sys_Connect(Fid_t sock, port_t port, timeout_t timeout) {
-	if (!fid_legal(sock) || !port_legal(port) || !PORT_MAP[port]) return -1;
+	if (!port_legal(port) || !PORT_MAP[port]) return -1;
 
 	SCB* listener = PORT_MAP[port];
 
 	SCB* client = get_scb(sock);
-	if (!client || !listener) return -1;
+	if (!client) return -1;
 
 	client->refcount++;
 
@@ -219,12 +219,16 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout) {
 	kernel_signal(&listener->listener_s.req_available);
 	
 	//wait for the request to be accepted
-	kernel_timedwait(&req->request_honored, SCHED_PIPE, SERVER_TIMEOUT);
+	kernel_timedwait(&req->request_honored, SCHED_PIPE, timeout);
 	client->refcount--;
 
 	int retval = (req->admitted) ? 0 : -1;
-	rlist_remove(&req->request_node);
+	if (retval == -1) rlist_remove(&req->request_node);
+
+	req->peer = NULL;
+	
 	free(req);
+	req = NULL;
 
 	return retval;
 }
