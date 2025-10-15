@@ -1,4 +1,17 @@
+###############
 
+About This Repository
+This repository is a mirror of the original project [tinyos3]((https://github.com/taconoodle/tinyos3)), which I collaborated on as a developer.
+During development, my contributions were made locally, so my individual commits are not reflected in the GitHub history.
+
+### My Contributions 
+- Developed and optimized the core logic involving pipelines, socket communication, and multithreading  
+- Participated in debugging, testing
+- Contributed to discussions on design decisions, code structure, and system scalability
+  
+This fork is intended to showcase my work and involvement in the project while giving full credit to the original repository and team.
+
+###############
 # TinyOS v.3
 
 TinyOS is a very small operating system, built on top of a simple-minded virtual machine, whose purpose is
