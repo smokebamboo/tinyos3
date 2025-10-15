@@ -1,7 +1,7 @@
 ###############
 
 About This Repository
-This repository is a mirror of the original project [tinyos3]((https://github.com/taconoodle/tinyos3)), which I collaborated on as a developer.
+This repository is a mirror of the original project [tinyos3]([https://github.com/taconoodle/tinyos3]), which I collaborated on as a developer.
 During development, my contributions were made locally, so my individual commits are not reflected in the GitHub history.
 
 ### My Contributions 
